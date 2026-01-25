@@ -23,6 +23,13 @@ local permisisonWarning = models.Piano.SKULL:newText("permisisonWarning")
     :setBackground(true)
     :setBackgroundColor(vec(0,0,0,1))
     :setVisible(false)
+local keyboardScreen = models.Piano.SKULL.Piano.KeyboardBase:newText("keyboardScreen")
+    :setPos(0,17,1.5)
+    :setScale(0.125/2)
+    :setRot(90)
+    :setAlignment("CENTER")
+    :setWrap(true)
+    :setWidth(100)
 
 local baseNotes = {
     [0] = "C",
@@ -58,6 +65,7 @@ function piano:new(pos)
     self.midi = self.instance.midi
     self.lastWorldTime = world.getTime()
     self.lastInstrument = 0
+    self.model = 1
     self.shouldRenderTunerBox = false
     self.instance.channels[1] = self.midi.channel:new(self.instance,1)
     self.instance.tracks[1] = {}
@@ -170,6 +178,9 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
     if not blockState then
         models.Piano.SKULL:setScale(0.3)
         tunerBoxText:setVisible(false)
+        models.Piano.SKULL.Piano.PianoBase:setVisible(true)
+        models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
+        models:setPrimaryTexture("CUSTOM",textures["PierraNovaPiano"])
         return
     end
     local blockProperties = blockState:getProperties()
@@ -188,9 +199,24 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
     permisisonWarning:setVisible(false)
 
     tunerBoxText:setVisible(pianoInstance.shouldRenderTunerBox)
+    if pianoInstance.model == 1 then
+        models.Piano.SKULL.Piano.PianoBase:setVisible(true)
+        models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
+        models:setPrimaryTexture("CUSTOM",textures["PierraNovaPiano"])
+    elseif pianoInstance.model == 2 then
+        models.Piano.SKULL.Piano.PianoBase:setVisible(true)
+        models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
+        models:setPrimaryTexture("CUSTOM",textures["ToastPiano"])
+    elseif pianoInstance.model == 3 then
+        models.Piano.SKULL.Piano.PianoBase:setVisible(false)
+        models.Piano.SKULL.Piano.KeyboardBase:setVisible(true)
+        models:setPrimaryTexture("CUSTOM",textures["ChloeKeyboard"])
+    end
     for keyID,key in pairs(pianoInstance.instance.tracks[1]) do
         if key.state ~= "RELEASED" then
-            models.Piano.SKULL.Piano.Keys[keyID]:setRot(-4,0,0)
+            if models.Piano.SKULL.Piano.Keys[keyID] then
+                models.Piano.SKULL.Piano.Keys[keyID]:setRot(-4,0,0)
+            end
         end
     end
     local worldTime = world.getTime()
@@ -200,11 +226,15 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
         pianoInstance:remove()
         return
     end
-    models:setPrimaryTexture("CUSTOM",textures["PierraNovaPiano"])
+    pianoInstance.model = 1
     local indicatorBlock = world.getBlockState(blockPos - vec(0,2,0))
     pianoInstance.shouldRenderTunerBox = false
+    local instrumentName = getInstrumentName(pianoInstance,pianoInstance.instance.channels[1].instrument)
+    keyboardScreen:setText([[{"text":"]] .. instrumentName .. [[","color":"#202020"}]])
     if indicatorBlock.id == "minecraft:gold_block" then
-        models:setPrimaryTexture("CUSTOM",textures["ToastPiano"])
+        pianoInstance.model = 2
+    elseif indicatorBlock.id == "minecraft:iron_block" then
+        pianoInstance.model = 3
     elseif string.find(indicatorBlock.id,"sign") then
         local signText = indicatorBlock:getEntityData().front_text.messages
         local pianoModel, defaultInstrument, tunerBoxString
@@ -226,11 +256,7 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
             tunerBoxPos = vec(vals[1],vals[2],vals[3])
         end
         if pianoModel then
-            if pianoModel == 1 then
-                models:setPrimaryTexture("CUSTOM",textures["PierraNovaPiano"])
-            elseif pianoModel == 2 then
-                models:setPrimaryTexture("CUSTOM",textures["ToastPiano"])
-            end
+            pianoInstance.model = pianoModel
         end
         if defaultInstrument then
             pianoInstance.instance.channels[1].instrument = defaultInstrument

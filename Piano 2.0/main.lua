@@ -29,7 +29,7 @@ local keyboardScreen = models.Piano.SKULL.Piano.KeyboardBase:newText("keyboardSc
     :setRot(90)
     :setAlignment("CENTER")
     :setWrap(true)
-    :setWidth(100)
+    :setWidth(120)
 
 local baseNotes = {
     [0] = "C",
@@ -51,7 +51,7 @@ for i = 21, 95 do
     noteStringToNote[baseNotes[i % 12] .. math.floor(i/12) - 1] = i
 end
 
-local midiAPI = world.avatarVars()["b0e11a12-eada-4f28-bb70-eb8903219fe5"]
+local midiAPI = world.avatarVars()[midiPlayerCloudID]
 local obb = require("OBB_Raycast_API")
 
 local pianos = {}
@@ -63,10 +63,12 @@ function piano:new(pos)
     self.ID = tostring(pos)
     self.instance = midiAPI.newInstance(tostring(pos),pos)
     self.midi = self.instance.midi
+    self.playingKeys = {}
     self.lastWorldTime = world.getTime()
     self.lastInstrument = 0
     self.model = 1
     self.shouldRenderTunerBox = false
+    self.tunerBoxText = ""
     self.instance.channels[1] = self.midi.channel:new(self.instance,1)
     self.instance.tracks[1] = {}
     self.instance:setVolume(0.5)
@@ -126,24 +128,45 @@ local function getSubOOBs(skullPos,skullRot,targetKey)
     return oobs
 end
 
-local function playMidiNote(pianoInstance,pitch,isHeld,playerEntity)
+local function playMidiNote(pianoID,pitch,volume,manualRelease,playerEntity,notePos)
+    if not volume then volume = 1 end
+    local pianoInstance = pianos[pianoID]
+    if not pianoInstance then return end
     local note = pianoInstance.instance.tracks[1][pitch]
     if note then
-        if isHeld then
+        if manualRelease then
             note.lastHeld = client.getSystemTime()
             return
         else
             note:stop()
+            pianoInstance.playingKeys[pitch] = nil
         end
     end
-    pianoInstance.instance.tracks[1][pitch] = pianoInstance.midi.note:play(pianoInstance.instance,pitch,100,1,1,client.getSystemTime())
-    pianoInstance.instance.tracks[1][pitch].isHeld = isHeld
+    pianoInstance.instance.tracks[1][pitch] = pianoInstance.midi.note:play(pianoInstance.instance,pitch,100 * volume,1,1,client.getSystemTime(),notePos)
+    pianoInstance.instance.tracks[1][pitch].manualRelease = manualRelease
     pianoInstance.instance.tracks[1][pitch].player = playerEntity
     pianoInstance.instance.tracks[1][pitch].lastHeld = client.getSystemTime()
+    pianoInstance.playingKeys[pitch] = true
 end
 
-local function releaseNote(pianoInstance,pitch,sysTime)
-    pianoInstance.instance.tracks[1][pitch]:release(sysTime)
+local function releaseMidiNote(pianoID,pitch)
+    local pianoInstance = pianos[pianoID]
+    if not pianoInstance then return end
+    pianoInstance.instance.tracks[1][pitch]:release(client.getSystemTime())
+    pianoInstance.playingKeys[pitch] = nil
+    models.Piano.SKULL.Piano.Keys[pitch]:setRot(0,0,0)
+end
+
+local function setMidiInstrument(pianoID,ID)
+    local pianoInstance = pianos[pianoID]
+    if not pianoInstance then return end
+    pianoInstance.instance.channels[1].instrument = ID
+end
+
+local function getMidiInstrument(pianoID)
+    local pianoInstance = pianos[pianoID]
+    if not pianoInstance then return end
+    return pianoInstance.instance.channels[1].instrument
 end
 
 local itemFrameGroups = {
@@ -161,9 +184,9 @@ local function getInstrumentName(pianoInstance,ID)
     local instrumentName
     local instrument = pianoInstance.instance.soundfont.soundTree[ID + 1]
     if instrument then
-        instrumentName = string.sub(instrument.template,14,-2)
-    else
-        instrumentName = pianoInstance.instance.soundfont.redundancyNames[tostring(ID + 1)]
+        instrumentName = "[" .. ID .. "] " .. string.sub(instrument.template,14,-2)
+    elseif pianoInstance.instance.soundfont.redundancyNames[tostring(ID + 1)] then
+        instrumentName = "[" .. ID .. "] " .. pianoInstance.instance.soundfont.redundancyNames[tostring(ID + 1)]
     end
     if not instrumentName then
         instrumentName = ""
@@ -172,8 +195,10 @@ local function getInstrumentName(pianoInstance,ID)
 end
 
 function events.skull_render(delta,blockState,itemstack,entity,type)
-    for i = 21, 95 do
-        models.Piano.SKULL.Piano.Keys[i]:setRot(0,0,0) -- this is a VERY BAD way of resetting the keys. MAKE SURE THIS IS TEMPORARY
+    for _,piano in pairs(pianos) do
+        for key,_ in pairs(piano.playingKeys) do
+            models.Piano.SKULL.Piano.Keys[key]:setRot(0,0,0)
+        end
     end
     if not blockState then
         models.Piano.SKULL:setScale(0.3)
@@ -186,6 +211,7 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
     local blockProperties = blockState:getProperties()
     if not blockProperties.rotation then return end
     models.Piano.SKULL:setScale(1)
+    midiAPI = world.avatarVars()[midiPlayerCloudID]
     if (not midiAPI) or (not midiAPI.newInstance) then return end
     local blockPos = blockState:getPos()
     if not pianos[tostring(blockPos)] then
@@ -197,8 +223,10 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
         return
     end
     permisisonWarning:setVisible(false)
-
     tunerBoxText:setVisible(pianoInstance.shouldRenderTunerBox)
+        :setText(pianoInstance.tunerBoxText)
+    local instrumentName = getInstrumentName(pianoInstance,pianoInstance.lastInstrument)
+    keyboardScreen:setText([[{"text":"]] .. instrumentName .. [[","color":"#202020"}]])
     if pianoInstance.model == 1 then
         models.Piano.SKULL.Piano.PianoBase:setVisible(true)
         models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
@@ -229,8 +257,7 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
     pianoInstance.model = 1
     local indicatorBlock = world.getBlockState(blockPos - vec(0,2,0))
     pianoInstance.shouldRenderTunerBox = false
-    local instrumentName = getInstrumentName(pianoInstance,pianoInstance.instance.channels[1].instrument)
-    keyboardScreen:setText([[{"text":"]] .. instrumentName .. [[","color":"#202020"}]])
+    pianoInstance.lastInstrument = getMidiInstrument(pianoInstance.ID)
     if indicatorBlock.id == "minecraft:gold_block" then
         pianoInstance.model = 2
     elseif indicatorBlock.id == "minecraft:iron_block" then
@@ -259,7 +286,7 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
             pianoInstance.model = pianoModel
         end
         if defaultInstrument then
-            pianoInstance.instance.channels[1].instrument = defaultInstrument
+            setMidiInstrument(pianoInstance.ID,defaultInstrument)
         end
         if tunerBoxPos then
             pianoInstance.shouldRenderTunerBox = true
@@ -281,14 +308,38 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
             if itemFrame then
                 local itemFrameRot = itemFrame:getNbt().ItemRotation
                 if itemFrameRot and note then
-                    local intrumentID = math.clamp(itemFrameRot * 23 + math.clamp(note,0,23),0,128)
-                    local lastInstrument = "\n§7" .. getInstrumentName(pianoInstance,intrumentID - 1)
-                    local currentInstrument = "\n§e" .. getInstrumentName(pianoInstance,intrumentID)
-                    local nextInstrument = "\n§7" .. getInstrumentName(pianoInstance,intrumentID + 1)
-                    tunerBoxText:setText("§b" .. itemFrameGroups[itemFrameRot] .. lastInstrument .. currentInstrument .. nextInstrument)
-                    pianoInstance.instance.channels[1].instrument = intrumentID
+                    local intrumentID = math.clamp(itemFrameRot * 24 + math.clamp(note,0,23),0,128)
+                    local groupIndex = math.floor(intrumentID/24)
+                    local instrumentGroup = itemFrameGroups[itemFrameRot]
+                    local lastInstrument = "§7" .. getInstrumentName(pianoInstance,intrumentID - 1)
+                    if math.floor((intrumentID - 1)/24) ~= groupIndex or itemFrameRot > 5 then
+                        lastInstrument = ""
+                    end
+                    local currentInstrument = getInstrumentName(pianoInstance,intrumentID)
+                    local nextInstrument = "§7" .. getInstrumentName(pianoInstance,intrumentID + 1)
+                    if math.floor((intrumentID + 1)/24) ~= groupIndex or itemFrameRot > 5  then
+                        nextInstrument = ""
+                    end
+                    local hoverState = "NONE"
+                    local client = client:getViewer()
+                    if client:getTargetedBlock(true,5):getPos() == tunerBoxPos then
+                        hoverState = "BLOCK"
+                    end
+                    local targetEntity = client:getTargetedEntity(5)
+                    if targetEntity then
+                        if targetEntity:getUUID() == itemFrame:getUUID() then
+                            hoverState = "ENTITY"
+                        end
+                    end
+                    if hoverState == "BLOCK" then
+                        currentInstrument = "§f§n" .. currentInstrument
+                    elseif hoverState == "ENTITY" then
+                        instrumentGroup = "§f§n" .. instrumentGroup
+                    end
+                    pianoInstance.tunerBoxText = "§b" .. instrumentGroup .. "\n"  .. lastInstrument .. "\n§e" .. currentInstrument .. "\n" .. nextInstrument
+                    setMidiInstrument(pianoInstance.ID,intrumentID)
                     if pianoInstance.lastInstrument ~= intrumentID then
-                        playMidiNote(pianoInstance,60,false,nil)
+                        playMidiNote(pianoInstance.ID,60,1,false)
                     end
                     pianoInstance.lastInstrument = intrumentID
                 end
@@ -306,17 +357,23 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
     end
     local sysTime = client:getSystemTime()
     for _,playerEntity in pairs(world:getPlayers()) do
+        local avatarVars = world:avatarVars()[playerEntity:getUUID()]
+        local eyeOffset
+        if avatarVars then
+            eyeOffset = avatarVars.eyePos
+        end
+        if not eyeOffset then eyeOffset = vec(0,0,0) end
         local swinging = playerEntity:getSwingTime() == 1
         local usingItem = playerEntity:isUsingItem()
         if swinging or usingItem then
             local rotation = -blockProperties.rotation * 22.5
-            local ray_start = playerEntity:getPos() + vec(0,playerEntity:getEyeHeight(),0)
-            local ray_end = ray_start + playerEntity:getLookDir()*4
-            local hits = obb:raycast(getMainOOBs(blockPos,rotation), ray_start, ray_end)
+            local rayStart = playerEntity:getPos() + vec(0,playerEntity:getEyeHeight(),0) + eyeOffset
+            local rayEnd = rayStart + playerEntity:getLookDir()*4
+            local hits = obb:raycast(getMainOOBs(blockPos,rotation), rayStart, rayEnd)
             local isBlackKeyHit = false
             if hits.blackKeys then
                 local key = -math.floor(hits.blackKeys.orientedHitPos.x*16 - 21.5)
-                local subHits = obb:raycast(getSubOOBs(blockPos,rotation,key), ray_start, ray_end)
+                local subHits = obb:raycast(getSubOOBs(blockPos,rotation,key), rayStart, rayEnd)
                 local closestKey
                 for ID,hit in pairs(subHits) do
                     if not closestKey then
@@ -329,13 +386,13 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
                 end
                 if closestKey then
                     local pitch = closestKey*2 + (math.floor((closestKey + 3) / 5) + math.floor((closestKey + 1) / 5)) + 8 + 12
-                    playMidiNote(pianoInstance,pitch,usingItem,playerEntity)
+                    playMidiNote(pianoInstance.ID,pitch,1,usingItem,playerEntity)
                 end
             end
             if hits.whiteKeys and (not isBlackKeyHit) then
                local key = -math.floor(hits.whiteKeys.orientedHitPos.x*16 - 21)
                local pitch = key * 2 - (math.floor((key + 5) / 7) + math.floor((key + 2) / 7)) + 9 + 12
-               playMidiNote(pianoInstance,pitch,usingItem,playerEntity)
+               playMidiNote(pianoInstance.ID,pitch,1,usingItem,playerEntity)
             end
         end
     end
@@ -345,23 +402,29 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
             isCrouching = note.player:isCrouching()
         end
         if not isCrouching then
-            if (not note.isHeld) and (note.state ~= "RELEASED") then
+            if (not note.manualRelease) and (note.state ~= "RELEASED") then
                 if (sysTime - note.initTime) > 300 then
-                    releaseNote(pianoInstance,ID,sysTime)
+                    releaseMidiNote(pianoInstance.ID,ID)
                 end
-            elseif note.isHeld and (note.state ~= "RELEASED") then
+            elseif note.manualRelease and (note.state ~= "RELEASED") then
                 if note.lastHeld ~= client.getSystemTime() then
-                    releaseNote(pianoInstance,ID,sysTime)
+                    releaseMidiNote(pianoInstance.ID,ID)
                 end
             end
         end
     end
 end
 
-local function playNote(pianoID,keyID,doesPlaySound)
-    if not doesPlaySound then return end
-    playMidiNote(pianos[pianoID],noteStringToNote[keyID],false)
+local function playNote(pianoID,keyID,doesPlaySound,notePos,noteVolume)
+    if not noteVolume then noteVolume = 1 end
+    if not doesPlaySound then noteVolume = 0 end
+    playMidiNote(pianoID,noteStringToNote[keyID],noteVolume,false,nil,notePos)
 end
 
 avatar:store("playNote",playNote)
+avatar:store("playNote",playMidiNote)
+avatar:store("playNote",releaseMidiNote)
+avatar:store("playNote",setMidiInstrument)
+avatar:store("playNote",getMidiInstrument)
 avatar:store("validPos", function(pianoID) return pianos[pianoID] ~= nil end)
+avatar:store("getPlayingKeys", function(pianoID) return pianos[pianoID] ~= nil and pianos[pianoID].playingKeys or nil end)

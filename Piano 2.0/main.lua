@@ -132,21 +132,23 @@ local function playMidiNote(pianoID,pitch,volume,manualRelease,playerEntity,note
     if not volume then volume = 1 end
     local pianoInstance = pianos[pianoID]
     if not pianoInstance then return end
-    local note = pianoInstance.instance.tracks[1][pitch]
+    local note = pianoInstance.playingKeys[pitch]
+    local midiNote = pianoInstance.instance.tracks[1][pitch]
+    local sysTime = client.getSystemTime()
     if note then
         if manualRelease then
-            note.lastHeld = client.getSystemTime()
+            note.lastHeld = world.getTime()
             return
-        else
-            note:stop()
-            pianoInstance.playingKeys[pitch] = nil
         end
     end
-    pianoInstance.instance.tracks[1][pitch] = pianoInstance.midi.note:play(pianoInstance.instance,pitch,100 * volume,1,1,client.getSystemTime(),notePos)
-    pianoInstance.instance.tracks[1][pitch].manualRelease = manualRelease
-    pianoInstance.instance.tracks[1][pitch].player = playerEntity
-    pianoInstance.instance.tracks[1][pitch].lastHeld = client.getSystemTime()
-    pianoInstance.playingKeys[pitch] = true
+    pianoInstance.midi.note:play(pianoInstance.instance,pitch,100 * volume,1,1,sysTime,notePos)
+    pianoInstance.playingKeys[pitch] = {
+        manualRelease = manualRelease,
+        player = playerEntity,
+        lastHeld = world.getTime(),
+        state = "PLAYING",
+        initTime = sysTime
+    }
 end
 
 local function releaseMidiNote(pianoID,pitch)
@@ -195,11 +197,6 @@ local function getInstrumentName(pianoInstance,ID)
 end
 
 function events.skull_render(delta,blockState,itemstack,entity,type)
-    for _,piano in pairs(pianos) do
-        for key,_ in pairs(piano.playingKeys) do
-            models.Piano.SKULL.Piano.Keys[key]:setRot(0,0,0)
-        end
-    end
     if not blockState then
         models.Piano.SKULL:setScale(0.3)
         tunerBoxText:setVisible(false)
@@ -222,6 +219,20 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
         permisisonWarning:setVisible(true)
         return
     end
+    for key,_ in pairs(pianoInstance.playingKeys) do
+        if pianoInstance.instance.tracks[1][key] then
+            pianoInstance.playingKeys[key].state = pianoInstance.instance.tracks[1][key].state
+        else
+            pianoInstance.playingKeys[key].state = "RELEASED"
+        end
+    end
+    for _,piano in pairs(pianos) do
+        for key,_ in pairs(piano.playingKeys) do
+            if models.Piano.SKULL.Piano.Keys[key] then
+                models.Piano.SKULL.Piano.Keys[key]:setRot(0,0,0)
+            end
+        end
+    end
     permisisonWarning:setVisible(false)
     tunerBoxText:setVisible(pianoInstance.shouldRenderTunerBox)
         :setText(pianoInstance.tunerBoxText)
@@ -240,11 +251,9 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
         models.Piano.SKULL.Piano.KeyboardBase:setVisible(true)
         models:setPrimaryTexture("CUSTOM",textures["ChloeKeyboard"])
     end
-    for keyID,key in pairs(pianoInstance.instance.tracks[1]) do
-        if key.state ~= "RELEASED" then
-            if models.Piano.SKULL.Piano.Keys[keyID] then
-                models.Piano.SKULL.Piano.Keys[keyID]:setRot(-4,0,0)
-            end
+    for keyID,key in pairs(pianoInstance.playingKeys) do
+        if models.Piano.SKULL.Piano.Keys[keyID] and key.state ~= "RELEASED" then
+            models.Piano.SKULL.Piano.Keys[keyID]:setRot(-4,0,0)
         end
     end
     local worldTime = world.getTime()
@@ -344,14 +353,14 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
                     pianoInstance.lastInstrument = intrumentID
                 end
                 if not itemFrameRot then
-                    tunerBoxText:setText("§cplace item in item frame")
+                    pianoInstance.tunerBoxText = "§cplace item in item frame"
                 end 
             end
             if not itemFrame then
-                tunerBoxText:setText("§cplace item frame")
+                pianoInstance.tunerBoxText = "§cplace item frame"
             end
             if not note then
-                tunerBoxText:setText("§cplace note block")
+                pianoInstance.tunerBoxText = "§cplace note block"
             end
         end
     end
@@ -396,7 +405,7 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
             end
         end
     end
-    for ID,note in pairs(pianoInstance.instance.tracks[1]) do
+    for ID,note in pairs(pianoInstance.playingKeys) do
         local isCrouching
         if note.player then
             isCrouching = note.player:isCrouching()
@@ -407,7 +416,7 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
                     releaseMidiNote(pianoInstance.ID,ID)
                 end
             elseif note.manualRelease and (note.state ~= "RELEASED") then
-                if note.lastHeld ~= client.getSystemTime() then
+                if note.lastHeld ~= world.getTime() then
                     releaseMidiNote(pianoInstance.ID,ID)
                 end
             end
@@ -422,9 +431,9 @@ local function playNote(pianoID,keyID,doesPlaySound,notePos,noteVolume)
 end
 
 avatar:store("playNote",playNote)
-avatar:store("playNote",playMidiNote)
-avatar:store("playNote",releaseMidiNote)
-avatar:store("playNote",setMidiInstrument)
-avatar:store("playNote",getMidiInstrument)
+avatar:store("playMidiNote",playMidiNote)
+avatar:store("releaseMidiNote",releaseMidiNote)
+avatar:store("setMidiInstrument",setMidiInstrument)
+avatar:store("getMidiInstrument",getMidiInstrument)
 avatar:store("validPos", function(pianoID) return pianos[pianoID] ~= nil end)
 avatar:store("getPlayingKeys", function(pianoID) return pianos[pianoID] ~= nil and pianos[pianoID].playingKeys or nil end)

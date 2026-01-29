@@ -345,22 +345,23 @@ local drumResetVals = {
     end
 }
 
-local function playMidiNote(pianoID,pitch,volume,manualRelease,playerEntity,notePos)
+local function playMidiNote(pianoID,pitch,volume,type,playerEntity,notePos)
     if not volume then volume = 1 end
+    if not type then type = "PRESS" end
     local pianoInstance = pianos[pianoID]
     if not pianoInstance then return end
     local note = pianoInstance.playingKeys[pitch]
     local midiNote = pianoInstance.instance.tracks[1][pitch]
     local sysTime = client.getSystemTime()
     if note then
-        if manualRelease then
+        if type == "SPAM_HOLD" then
             note.lastHeld = world.getTime()
             return
         end
     end
     pianoInstance.midi.note:play(pianoInstance.instance,pitch,100 * volume,1,1,sysTime,notePos)
     pianoInstance.playingKeys[pitch] = {
-        manualRelease = manualRelease,
+        type = type,
         player = playerEntity,
         lastHeld = world.getTime(),
         state = "PLAYING",
@@ -378,7 +379,9 @@ local function releaseMidiNote(pianoID,pitch)
     if not pianoInstance then return end
     pianoInstance.instance.tracks[1][pitch]:release(client.getSystemTime())
     pianoInstance.playingKeys[pitch] = nil
-    models.Piano.SKULL.Piano.Keys[pitch]:setRot(0,0,0)
+    if models.Piano.SKULL.Piano.Keys[pitch] then
+        models.Piano.SKULL.Piano.Keys[pitch]:setRot(0,0,0)
+    end
 end
 
 local function setMidiInstrument(pianoID,ID)
@@ -646,8 +649,13 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
         end
         if not eyeOffset then eyeOffset = vec(0,0,0) end
         local swinging = playerEntity:getSwingTime() == 1
-        local usingItem = playerEntity:isUsingItem()
-        if swinging or usingItem then
+        local type
+        if playerEntity:isUsingItem() then
+            type = "SPAM_HOLD"
+        else
+            type = "PRESS"
+        end
+        if swinging or (type == "SPAM_HOLD") then
             local rotation = -blockProperties.rotation * 22.5
             local rayStart = playerEntity:getPos() + vec(0,playerEntity:getEyeHeight(),0) + eyeOffset
             local rayEnd = rayStart + playerEntity:getLookDir()*4
@@ -663,7 +671,7 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
                     end
                 end
                 if closestHit then
-                    playMidiNote(pianoInstance.ID,drumIndex[closestHit],1,usingItem,playerEntity)
+                    playMidiNote(pianoInstance.ID,drumIndex[closestHit],1,type,playerEntity)
                 end
             else
                 local hits = obb:raycast(getMainOOBs(blockPos,rotation), rayStart, rayEnd)
@@ -683,13 +691,13 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
                     end
                     if closestKey then
                         local pitch = closestKey*2 + (math.floor((closestKey + 3) / 5) + math.floor((closestKey + 1) / 5)) + 8 + 12
-                        playMidiNote(pianoInstance.ID,pitch,1,usingItem,playerEntity)
+                        playMidiNote(pianoInstance.ID,pitch,1,type,playerEntity)
                     end
                 end
                 if hits.whiteKeys and (not isBlackKeyHit) then
                    local key = -math.floor(hits.whiteKeys.orientedHitPos.x*16 - 21)
                    local pitch = key * 2 - (math.floor((key + 5) / 7) + math.floor((key + 2) / 7)) + 9 + 12
-                   playMidiNote(pianoInstance.ID,pitch,1,usingItem,playerEntity)
+                   playMidiNote(pianoInstance.ID,pitch,1,type,playerEntity)
                 end
             end
         end
@@ -700,11 +708,11 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
             isCrouching = note.player:isCrouching()
         end
         if not isCrouching then
-            if (not note.manualRelease) and (note.state ~= "RELEASED") then
+            if (note.type == "PRESS") and (note.state ~= "RELEASED") then
                 if (sysTime - note.initTime) > 300 then
                     releaseMidiNote(pianoInstance.ID,ID)
                 end
-            elseif note.manualRelease and (note.state ~= "RELEASED") then
+            elseif note.type == "SPAM_HOLD" and (note.state ~= "RELEASED") then
                 if note.lastHeld ~= world.getTime() then
                     releaseMidiNote(pianoInstance.ID,ID)
                 end

@@ -64,6 +64,7 @@ function piano:new(pos)
     self.instance = midiAPI.newInstance(tostring(pos),pos)
     self.midi = self.instance.midi
     self.playingKeys = {}
+    self.drumAnimations = {}
     self.lastWorldTime = world.getTime()
     self.lastInstrument = 0
     self.model = 1
@@ -96,14 +97,14 @@ end
 local function getMainOOBs(skullPos,skullRot)
     local obbs = {
         blackKeys = {
-          position = skullPos + vec(0.5,0,0.5),
-          corners = {vec(-21.35/16,16/16,-5/16), vec(21.35/16,16.5/16,1/16)},
-          rotation = matrices.mat3():rotateY(skullRot)
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-21.35/16,16/16,-5/16), vec(21.35/16,16.5/16,1/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
         },
         whiteKeys = {
-          position = skullPos + vec(0.5,0,0.5),
-          corners = {vec(-22/16,15/16,-7/16), vec(22/16,16/16,1/16)},
-          rotation = matrices.mat3():rotateY(skullRot)
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-22/16,15/16,-7/16), vec(22/16,16/16,1/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
         }
 }
     return obbs
@@ -128,6 +129,222 @@ local function getSubOOBs(skullPos,skullRot,targetKey)
     return oobs
 end
 
+local drumIndex = {
+    bassDrum = 35,
+    snareCrossStick = 37,
+    snareDrum = 38,
+    floorTom = 41,
+    lowTom = 45,
+    highTom = 47,
+    rideCymbal = 51,
+    crashCymbal = 49,
+    hiHatsOpen = 46,
+    hiHatsClosed = 42,
+    hiHatsPedal = 44
+}
+
+local function getDrumOOBs(skullPos,skullRot)
+    skullRot = skullRot + 180
+    local oobs = {
+        bassDrum = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-6/16,0/16,-8/16),vec(6/16,12/16,7/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        snareCrossStick = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-21/16,16/16,11/16),vec(-11/16,19/16,21/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        snareDrum = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-21/16,19/16,11/16),vec(-11/16,20/16,21/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        floorTom = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(10/16,11/16,6/16),vec(20/16,16/16,16/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        lowTom = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(1/16,16/16,-7/16),vec(12/16,23/16,2/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        highTom = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-11/16,16/16,-6/16),vec(-1/16,22/16,2/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        rideCymbal = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(5/16,25/16,-15/16),vec(20/16,28/16,-2/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        crashCymbal = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-5/16,25/16,-15/16),vec(-20/16,28/16,-1/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        hiHatsOpen = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-13/16,20/16,-5/16),vec(-22/16,22/16,5/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        hiHatsClosed = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-13/16,14/16,-5/16),vec(-22/16,20/16,5/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        },
+        hiHatsPedal = {
+            position = skullPos + vec(0.5,0,0.5),
+            corners = {vec(-13/16,0/16,-5/16),vec(-22/16,14/16,5/16)},
+            rotation = matrices.mat3():rotateY(skullRot)
+        }
+    }
+    return oobs
+end
+
+local function getSin(delta, min,max,period,phaseShift)
+  return math.abs((min-max)/2) * math.sin((2*math.pi*(delta+phaseShift))/(period+(math.pi/2))) + ((min+max)/2)
+end
+
+local drumSet = models.Piano.SKULL.Piano.DrumSet
+local drumAnims = {
+    [35] = function(animFrame,pianoInstance)
+        if animFrame < 4 then
+            drumSet.BassDrum.KickPedal.Pedal:setRot(0)
+            drumSet.BassDrum.KickPedal.Beater:setRot(getSin(animFrame,-45,0,4,0))
+            drumSet.BassDrum.BDrum:setScale(getSin(animFrame,1,1.03,4,0))
+        else
+            pianoInstance.drumAnimations[35] = nil
+        end
+    end,
+    [37] = function(animFrame,pianoInstance)
+        if animFrame < 3 then
+            local rot = getSin(animFrame,-0.5,0,1.5,0)
+            drumSet.Snare:setRot(0,0,rot)
+        else
+            pianoInstance.drumAnimations[37] = nil
+        end
+    end,
+    [38] = function(animFrame,pianoInstance)
+        if animFrame < 4 then
+            drumSet.Snare.SDrum:setScale(getSin(animFrame,1,1.03,4,0))
+        else
+            pianoInstance.drumAnimations[38] = nil
+        end
+    end,
+    [41] = function(animFrame,pianoInstance)
+        if animFrame < 4 then
+            drumSet.FloorTom.FTDrum:setScale(getSin(animFrame,1,1.03,4,0))
+        else
+            pianoInstance.drumAnimations[41] = nil
+        end
+    end,
+    [45] = function(animFrame,pianoInstance)
+        if animFrame < 4 then
+            drumSet.MediumTom.MDrum:setScale(getSin(animFrame,1,1.03,4,0))
+        else
+            pianoInstance.drumAnimations[45] = nil
+        end
+    end,
+    [47] = function(animFrame,pianoInstance)
+        if animFrame < 4 then
+            drumSet.HiTom.HDrum:setScale(getSin(animFrame,1,1.03,4,0))
+        else
+            pianoInstance.drumAnimations[47] = nil
+        end
+    end,
+    [51] = function(animFrame,pianoInstance)
+        if animFrame < 40 then
+            local mod = 1 - animFrame/40
+            local rot = getSin(animFrame,-5,5,20,10)*mod
+            drumSet.RideCymbal.RCStand.RCDrum:setRot(rot-35,0,rot/3)
+        else
+            pianoInstance.drumAnimations[51] = nil
+        end
+    end,
+    [49] = function(animFrame,pianoInstance)
+        if animFrame < 80 then
+            local mod = 1 - animFrame/80
+            local rot = getSin(animFrame,-10,10,20,10)*mod
+            drumSet.CrashCymbal.CCStand.CCCymbal:setRot(rot-35,0,-rot/3)
+        else
+            pianoInstance.drumAnimations[49] = nil
+        end
+    end,
+    [46] = function(animFrame,pianoInstance)
+        if animFrame < 20 then
+            local mod = 1 - animFrame/20
+            local rot = getSin(animFrame,-2,2,10,5)*mod
+            drumSet.HiHats.HHCymbal:setRot(rot,-45,-rot)
+        else
+            pianoInstance.drumAnimations[46] = nil
+        end
+    end,
+    [42] = function(animFrame,pianoInstance)
+        if animFrame < 15 then
+            local mod = 1 - animFrame/15
+            local rot = getSin(animFrame,-2,2,10,5)*mod
+            drumSet.HiHats.HHCymbal:setRot(rot,-45,-rot)
+            drumSet.HiHats.HHCymbal:setScale(1,0.5,1)
+            drumSet.HiHats.Pedal2:setRot(0,45,0)
+        else
+            pianoInstance.drumAnimations[42] = nil
+        end
+    end,
+    [44] = function(animFrame,pianoInstance)
+        if animFrame < 4 then
+            drumSet.HiHats.HHCymbal:setScale(1,0.5,1)
+            drumSet.HiHats.Pedal2:setRot(0,45,0)
+        else
+            pianoInstance.drumAnimations[44] = nil
+        end
+    end
+}
+
+local drumResetVals = {
+    [35] = function()
+        drumSet.BassDrum.KickPedal.Pedal:setRot(-15)
+        drumSet.BassDrum.KickPedal.Beater:setRot(-45)
+        drumSet.BassDrum.BDrum:setScale(1)
+    end,
+    [37] = function()
+        drumSet.Snare:setRot(0,0,0)
+    end,
+    [38] = function()
+        drumSet.Snare.SDrum:setScale(1)
+    end,
+    [41] = function()
+        drumSet.FloorTom.FTDrum:setScale(1)
+    end,
+    [45] = function()
+        drumSet.MediumTom.MDrum:setScale(1)
+    end,
+    [47] = function()
+        drumSet.HiTom.HDrum:setScale(1)
+    end,
+    [51] = function()
+        drumSet.RideCymbal.RCStand.RCDrum:setRot(-35,0,0)
+    end,
+    [49] = function()
+        drumSet.CrashCymbal.CCStand.CCCymbal:setRot(-35,0,0)
+    end,
+    [46] = function()
+        drumSet.HiHats.HHCymbal:setRot(0,-45,0)
+    end,
+    [42] = function()
+        drumSet.HiHats.HHCymbal:setRot(0,-45,0)
+        drumSet.HiHats.HHCymbal:setScale(1,1,1)
+        drumSet.HiHats.Pedal2:setRot(-15,45,0)
+    end,
+    [44] = function()
+        drumSet.HiHats.HHCymbal:setScale(1,1,1)
+        drumSet.HiHats.Pedal2:setRot(-15,45,0)
+    end
+}
+
 local function playMidiNote(pianoID,pitch,volume,manualRelease,playerEntity,notePos)
     if not volume then volume = 1 end
     local pianoInstance = pianos[pianoID]
@@ -149,6 +366,11 @@ local function playMidiNote(pianoID,pitch,volume,manualRelease,playerEntity,note
         state = "PLAYING",
         initTime = sysTime
     }
+    if pianoInstance.model == 4 then           
+        pianoInstance.drumAnimations[pitch] = {
+            initTime = sysTime
+        }
+    end
 end
 
 local function releaseMidiNote(pianoID,pitch)
@@ -196,17 +418,55 @@ local function getInstrumentName(pianoInstance,ID)
     return instrumentName
 end
 
-function events.skull_render(delta,blockState,itemstack,entity,type)
-    if not blockState then
-        models.Piano.SKULL:setScale(0.3)
-        tunerBoxText:setVisible(false)
+local function resetPiano()
+    models.Piano.SKULL:setScale(0.3)
+    tunerBoxText:setVisible(false)
+    models.Piano.SKULL.Piano.PianoBase:setVisible(true)
+    models.Piano.SKULL.Piano.Keys:setVisible(true)
+    models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
+    models.Piano.SKULL.Piano.DrumSet:setVisible(false)
+    models:setPrimaryTexture("CUSTOM",textures["PierraNovaPiano"])
+end
+
+local pianoType = {
+    [1] = function(pianoInstance)
         models.Piano.SKULL.Piano.PianoBase:setVisible(true)
         models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
+        models.Piano.SKULL.Piano.Keys:setVisible(true)
+        models.Piano.SKULL.Piano.DrumSet:setVisible(false)
         models:setPrimaryTexture("CUSTOM",textures["PierraNovaPiano"])
-        return
+        pianoInstance.instance.channels[1].instrument = 0
+    end,
+    [2] = function(pianoInstance)
+        models.Piano.SKULL.Piano.PianoBase:setVisible(true)
+        models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
+        models.Piano.SKULL.Piano.Keys:setVisible(true)
+        models.Piano.SKULL.Piano.DrumSet:setVisible(false)
+        models:setPrimaryTexture("CUSTOM",textures["ToastPiano"])
+        pianoInstance.instance.channels[1].instrument = 0
+    end,
+    [3] = function(pianoInstance)
+        models.Piano.SKULL.Piano.PianoBase:setVisible(false)
+        models.Piano.SKULL.Piano.KeyboardBase:setVisible(true)
+        models.Piano.SKULL.Piano.Keys:setVisible(true)
+        models.Piano.SKULL.Piano.DrumSet:setVisible(false)
+        models:setPrimaryTexture("CUSTOM",textures["ChloeKeyboard"])
+        pianoInstance.instance.channels[1].instrument = 0
+    end,
+    [4] = function(pianoInstance)
+        models.Piano.SKULL.Piano.PianoBase:setVisible(false)
+        models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
+        models.Piano.SKULL.Piano.Keys:setVisible(false)
+        models.Piano.SKULL.Piano.DrumSet:setVisible(true)
+        models:setPrimaryTexture("CUSTOM",textures["GloomsysDrumKit"])
+        pianoInstance.instance.channels[1].instrument = 128
     end
+}
+
+function events.skull_render(delta,blockState,itemstack,entity,type)
+    if not blockState then resetPiano() return end
     local blockProperties = blockState:getProperties()
-    if not blockProperties.rotation then return end
+    if not blockProperties.rotation then resetPiano() return end
     models.Piano.SKULL:setScale(1)
     midiAPI = world.avatarVars()[midiPlayerCloudID]
     if (not midiAPI) or (not midiAPI.newInstance) then return end
@@ -238,40 +498,53 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
         :setText(pianoInstance.tunerBoxText)
     local instrumentName = getInstrumentName(pianoInstance,pianoInstance.lastInstrument)
     keyboardScreen:setText([[{"text":"]] .. instrumentName .. [[","color":"#202020"}]])
-    if pianoInstance.model == 1 then
-        models.Piano.SKULL.Piano.PianoBase:setVisible(true)
-        models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
-        models:setPrimaryTexture("CUSTOM",textures["PierraNovaPiano"])
-    elseif pianoInstance.model == 2 then
-        models.Piano.SKULL.Piano.PianoBase:setVisible(true)
-        models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
-        models:setPrimaryTexture("CUSTOM",textures["ToastPiano"])
-    elseif pianoInstance.model == 3 then
-        models.Piano.SKULL.Piano.PianoBase:setVisible(false)
-        models.Piano.SKULL.Piano.KeyboardBase:setVisible(true)
-        models:setPrimaryTexture("CUSTOM",textures["ChloeKeyboard"])
+    if pianoType[pianoInstance.model] then
+        pianoType[pianoInstance.model](pianoInstance)
     end
-    for keyID,key in pairs(pianoInstance.playingKeys) do
-        if models.Piano.SKULL.Piano.Keys[keyID] and key.state ~= "RELEASED" then
-            models.Piano.SKULL.Piano.Keys[keyID]:setRot(-4,0,0)
+    if pianoInstance.model == 4 then
+        for _,piano in pairs(pianos) do
+            for animaiton,_ in pairs(piano.drumAnimations) do
+                drumResetVals[animaiton]()
+            end
+        end
+        for animID,anim in pairs(pianoInstance.drumAnimations) do
+            local animFrame = (client.getSystemTime() - anim.initTime) / 1000 * 20
+            if drumAnims[animID] then
+                drumAnims[animID](animFrame,pianoInstance,animID)
+            end
+        end
+    else
+        for keyID,key in pairs(pianoInstance.playingKeys) do
+            if models.Piano.SKULL.Piano.Keys[keyID] and key.state ~= "RELEASED" then
+                models.Piano.SKULL.Piano.Keys[keyID]:setRot(-4,0,0)
+            end
         end
     end
     local worldTime = world.getTime()
     if worldTime == pianoInstance.lastWorldTime then return end
+    
+    --------- tick ----------
     pianoInstance.lastWorldTime  = worldTime
     if pianoInstance.instance.isRemoved then
         pianoInstance:remove()
         return
     end
-    pianoInstance.model = 1
     local indicatorBlock = world.getBlockState(blockPos - vec(0,2,0))
+    local hasSign = string.find(indicatorBlock.id,"sign")
+    if not hasSign then
+        pianoInstance.model = 1
+        pianoInstance.instance.channels[1].instrument = 0
+    end
     pianoInstance.shouldRenderTunerBox = false
     pianoInstance.lastInstrument = getMidiInstrument(pianoInstance.ID)
     if indicatorBlock.id == "minecraft:gold_block" then
         pianoInstance.model = 2
     elseif indicatorBlock.id == "minecraft:iron_block" then
         pianoInstance.model = 3
-    elseif string.find(indicatorBlock.id,"sign") then
+    elseif indicatorBlock.id == "minecraft:lapis_block" then
+        pianoInstance.model = 4
+        pianoInstance.instance.channels[1].instrument = 128
+    elseif hasSign then
         local signText = indicatorBlock:getEntityData().front_text.messages
         local pianoModel, defaultInstrument, tunerBoxString
         if client.compareVersions(client.getVersion(),"1.20.5") >= 0 then
@@ -378,30 +651,46 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
             local rotation = -blockProperties.rotation * 22.5
             local rayStart = playerEntity:getPos() + vec(0,playerEntity:getEyeHeight(),0) + eyeOffset
             local rayEnd = rayStart + playerEntity:getLookDir()*4
-            local hits = obb:raycast(getMainOOBs(blockPos,rotation), rayStart, rayEnd)
-            local isBlackKeyHit = false
-            if hits.blackKeys then
-                local key = -math.floor(hits.blackKeys.orientedHitPos.x*16 - 21.5)
-                local subHits = obb:raycast(getSubOOBs(blockPos,rotation,key), rayStart, rayEnd)
-                local closestKey
-                for ID,hit in pairs(subHits) do
-                    if not closestKey then
-                        closestKey = ID
+            if pianoInstance.model == 4 then
+                local hits = obb:raycast(getDrumOOBs(blockPos,rotation), rayStart, rayEnd)
+                local closestHit
+                for ID,hit in pairs(hits) do
+                    if not closestHit then
+                        closestHit = ID
                     end
-                    if subHits[closestKey].distance > hit.distance then
-                        closestKey = ID
+                    if hits[closestHit].distance > hit.distance then
+                        closestHit = ID
                     end
-                    isBlackKeyHit = true
                 end
-                if closestKey then
-                    local pitch = closestKey*2 + (math.floor((closestKey + 3) / 5) + math.floor((closestKey + 1) / 5)) + 8 + 12
-                    playMidiNote(pianoInstance.ID,pitch,1,usingItem,playerEntity)
+                if closestHit then
+                    playMidiNote(pianoInstance.ID,drumIndex[closestHit],1,usingItem,playerEntity)
                 end
-            end
-            if hits.whiteKeys and (not isBlackKeyHit) then
-               local key = -math.floor(hits.whiteKeys.orientedHitPos.x*16 - 21)
-               local pitch = key * 2 - (math.floor((key + 5) / 7) + math.floor((key + 2) / 7)) + 9 + 12
-               playMidiNote(pianoInstance.ID,pitch,1,usingItem,playerEntity)
+            else
+                local hits = obb:raycast(getMainOOBs(blockPos,rotation), rayStart, rayEnd)
+                local isBlackKeyHit = false
+                if hits.blackKeys then
+                    local key = -math.floor(hits.blackKeys.orientedHitPos.x*16 - 21.5)
+                    local subHits = obb:raycast(getSubOOBs(blockPos,rotation,key), rayStart, rayEnd)
+                    local closestKey
+                    for ID,hit in pairs(subHits) do
+                        if not closestKey then
+                            closestKey = ID
+                        end
+                        if subHits[closestKey].distance > hit.distance then
+                            closestKey = ID
+                        end
+                        isBlackKeyHit = true
+                    end
+                    if closestKey then
+                        local pitch = closestKey*2 + (math.floor((closestKey + 3) / 5) + math.floor((closestKey + 1) / 5)) + 8 + 12
+                        playMidiNote(pianoInstance.ID,pitch,1,usingItem,playerEntity)
+                    end
+                end
+                if hits.whiteKeys and (not isBlackKeyHit) then
+                   local key = -math.floor(hits.whiteKeys.orientedHitPos.x*16 - 21)
+                   local pitch = key * 2 - (math.floor((key + 5) / 7) + math.floor((key + 2) / 7)) + 9 + 12
+                   playMidiNote(pianoInstance.ID,pitch,1,usingItem,playerEntity)
+                end
             end
         end
     end
@@ -420,6 +709,9 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
                     releaseMidiNote(pianoInstance.ID,ID)
                 end
             end
+            if not pianoInstance.instance.tracks[1][ID] then
+                pianoInstance.playingKeys[ID] = nil
+            end
         end
     end
 end
@@ -435,5 +727,6 @@ avatar:store("playMidiNote",playMidiNote)
 avatar:store("releaseMidiNote",releaseMidiNote)
 avatar:store("setMidiInstrument",setMidiInstrument)
 avatar:store("getMidiInstrument",getMidiInstrument)
+avatar:store("getPiano", function(pianoID) return pianos[pianoID] end)
 avatar:store("validPos", function(pianoID) return pianos[pianoID] ~= nil end)
 avatar:store("getPlayingKeys", function(pianoID) return pianos[pianoID] ~= nil and pianos[pianoID].playingKeys or nil end)

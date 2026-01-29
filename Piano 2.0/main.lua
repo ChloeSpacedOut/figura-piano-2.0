@@ -70,6 +70,9 @@ function piano:new(pos)
     self.model = 1
     self.shouldRenderTunerBox = false
     self.tunerBoxText = ""
+    self.tunerBoxRot = nil
+    self.tunerBoxPos = nil
+    self.instrumentOverride = nil
     self.instance.channels[1] = self.midi.channel:new(self.instance,1)
     self.instance.tracks[1] = {}
     self.instance:setVolume(0.5)
@@ -345,6 +348,82 @@ local drumResetVals = {
     end
 }
 
+local base64 = {}
+
+local function validate(str)
+    return #str % 4 == 0 and str:match("^[A-Za-z0-9+/]*=?=?$")
+end
+
+function base64.encode(text)
+    if not text then return end
+    local buffer = data:createBuffer()
+    buffer:writeByteArray(text)
+    buffer:setPosition(0)
+    local output = buffer:readBase64()
+    buffer:close()
+    return output
+end
+
+function base64.decode(b)
+    if not b then return end
+    if not validate(b) then return end
+    local buffer = data:createBuffer()
+    buffer:writeBase64(b)
+    buffer:setPosition(0)
+    local output = buffer:readByteArray()
+    buffer:close()
+    return output
+end
+
+local function getItem(data)
+    data = toJson(data)
+    local item_str = ("player_head" .. toJson{
+        SkullOwner = {
+            Id = {
+                client.uuidToIntArray(avatar:getUUID())
+            },
+            Properties = {
+                textures = {
+                    {
+                        Value = base64.encode(data)
+                    }
+                }
+            }
+        }
+    }):gsub('"Id":%[','"Id":[I;')
+
+    return world.newItem(item_str)
+end
+
+local function getTextureValue(data)
+    if not data then return end
+    if data.SkullOwner then
+        local properties = data.SkullOwner.Properties
+        local textures = properties and properties.textures
+        return textures[1].Value
+    elseif data.profile or data["minecraft:profile"] then
+        local properties = (data.profile or data["minecraft:profile"]).properties
+        local textures = properties and properties[1]
+        return textures[1].Value
+    end
+end
+
+---Attempts to get a mode from the given texture data.
+local function getData(head)
+    local texture_value
+    if type(head) == "ItemStack" then
+        texture_value = getTextureValue(head:getTag(  ))
+    elseif type(head) == "BlockState" then
+        texture_value = getTextureValue(head:getEntityData())
+    end
+    if not texture_value then return end
+
+    local decoded = base64.decode(texture_value)
+    if not decoded then return end
+
+    return decoded
+end
+
 local function playMidiNote(pianoID,pitch,volume,type,playerEntity,notePos)
     if not volume then volume = 1 end
     if not type then type = "PRESS" end
@@ -377,6 +456,7 @@ end
 local function releaseMidiNote(pianoID,pitch)
     local pianoInstance = pianos[pianoID]
     if not pianoInstance then return end
+    if not pianoInstance.instance.tracks[1][pitch] then return end
     pianoInstance.instance.tracks[1][pitch]:release(client.getSystemTime())
     pianoInstance.playingKeys[pitch] = nil
     if models.Piano.SKULL.Piano.Keys[pitch] then
@@ -384,16 +464,22 @@ local function releaseMidiNote(pianoID,pitch)
     end
 end
 
-local function setMidiInstrument(pianoID,ID)
+local function setInstrument(pianoID,ID)
     local pianoInstance = pianos[pianoID]
     if not pianoInstance then return end
     pianoInstance.instance.channels[1].instrument = ID
 end
 
-local function getMidiInstrument(pianoID)
+local function setInstrumentOverride(pianoID,ID)
     local pianoInstance = pianos[pianoID]
     if not pianoInstance then return end
-    return pianoInstance.instance.channels[1].instrument
+    pianoInstance.instrumentOverride = ID
+end
+
+local function getInstrumentOverride(pianoID)
+    local pianoInstance = pianos[pianoID]
+    if not pianoInstance then return end
+    return pianoInstance.instrumentOverride
 end
 
 local itemFrameGroups = {
@@ -421,16 +507,6 @@ local function getInstrumentName(pianoInstance,ID)
     return instrumentName
 end
 
-local function resetPiano()
-    models.Piano.SKULL:setScale(0.3)
-    tunerBoxText:setVisible(false)
-    models.Piano.SKULL.Piano.PianoBase:setVisible(true)
-    models.Piano.SKULL.Piano.Keys:setVisible(true)
-    models.Piano.SKULL.Piano.KeyboardBase:setVisible(false)
-    models.Piano.SKULL.Piano.DrumSet:setVisible(false)
-    models:setPrimaryTexture("CUSTOM",textures["PierraNovaPiano"])
-end
-
 local pianoType = {
     [1] = function(pianoInstance)
         models.Piano.SKULL.Piano.PianoBase:setVisible(true)
@@ -438,7 +514,9 @@ local pianoType = {
         models.Piano.SKULL.Piano.Keys:setVisible(true)
         models.Piano.SKULL.Piano.DrumSet:setVisible(false)
         models:setPrimaryTexture("CUSTOM",textures["PierraNovaPiano"])
-        pianoInstance.instance.channels[1].instrument = 0
+        if pianoInstance and (not pianoInstance.instrumentOverride) then
+            pianoInstance.instance.channels[1].instrument = 0
+        end
     end,
     [2] = function(pianoInstance)
         models.Piano.SKULL.Piano.PianoBase:setVisible(true)
@@ -446,7 +524,9 @@ local pianoType = {
         models.Piano.SKULL.Piano.Keys:setVisible(true)
         models.Piano.SKULL.Piano.DrumSet:setVisible(false)
         models:setPrimaryTexture("CUSTOM",textures["ToastPiano"])
-        pianoInstance.instance.channels[1].instrument = 0
+        if pianoInstance and (not pianoInstance.instrumentOverride) then
+            pianoInstance.instance.channels[1].instrument = 0
+        end
     end,
     [3] = function(pianoInstance)
         models.Piano.SKULL.Piano.PianoBase:setVisible(false)
@@ -454,7 +534,9 @@ local pianoType = {
         models.Piano.SKULL.Piano.Keys:setVisible(true)
         models.Piano.SKULL.Piano.DrumSet:setVisible(false)
         models:setPrimaryTexture("CUSTOM",textures["ChloeKeyboard"])
-        pianoInstance.instance.channels[1].instrument = 0
+        if pianoInstance and (not pianoInstance.instrumentOverride) then
+            pianoInstance.instance.channels[1].instrument = 0
+        end
     end,
     [4] = function(pianoInstance)
         models.Piano.SKULL.Piano.PianoBase:setVisible(false)
@@ -462,14 +544,38 @@ local pianoType = {
         models.Piano.SKULL.Piano.Keys:setVisible(false)
         models.Piano.SKULL.Piano.DrumSet:setVisible(true)
         models:setPrimaryTexture("CUSTOM",textures["GloomsysDrumKit"])
-        pianoInstance.instance.channels[1].instrument = 128
+        if pianoInstance and (not pianoInstance.instrumentOverride) then
+            pianoInstance.instance.channels[1].instrument = 128
+        end
     end
 }
 
+local function resetPiano(data)
+    local pianoModel
+    local rawData = getData(data)
+    local headData
+    if rawData then
+        headData = parseJson(getData(data))
+    end
+    if headData then
+        pianoModel = headData.model
+    end
+    if pianoModel then
+        if pianoType[pianoModel] then
+            pianoType[pianoModel]()
+        end
+    else
+        pianoType[1]()
+    end
+    models.Piano.SKULL:setScale(0.3)
+    tunerBoxText:setVisible(false)
+end
+
 function events.skull_render(delta,blockState,itemstack,entity,type)
-    if not blockState then resetPiano() return end
+    if not blockState then resetPiano(itemstack) return end
     local blockProperties = blockState:getProperties()
-    if not blockProperties.rotation then resetPiano() return end
+    if not blockProperties.rotation then resetPiano(blockState) return end
+    resetPiano(blockState)
     models.Piano.SKULL:setScale(1)
     midiAPI = world.avatarVars()[midiPlayerCloudID]
     if (not midiAPI) or (not midiAPI.newInstance) then return end
@@ -499,6 +605,8 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
     permisisonWarning:setVisible(false)
     tunerBoxText:setVisible(pianoInstance.shouldRenderTunerBox)
         :setText(pianoInstance.tunerBoxText)
+    tunerBoxRot:setRot(pianoInstance.tunerBoxRot)
+    tunerBoxParent:setPos(pianoInstance.tunerBoxPos)
     local instrumentName = getInstrumentName(pianoInstance,pianoInstance.lastInstrument)
     keyboardScreen:setText([[{"text":"]] .. instrumentName .. [[","color":"#202020"}]])
     if pianoType[pianoInstance.model] then
@@ -507,7 +615,9 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
     if pianoInstance.model == 4 then
         for _,piano in pairs(pianos) do
             for animaiton,_ in pairs(piano.drumAnimations) do
-                drumResetVals[animaiton]()
+                if drumResetVals[animaiton] then
+                    drumResetVals[animaiton]()
+                end
             end
         end
         for animID,anim in pairs(pianoInstance.drumAnimations) do
@@ -532,24 +642,47 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
         pianoInstance:remove()
         return
     end
+    local pianoModel,defaultInstrument,tunerBoxPos
+    local headData = parseJson(getData(blockState))
+
+
+    if headData.model then
+        pianoModel = headData.model
+    end
+    if headData.defaultInstrument then
+        defaultInstrument = headData.defaultInstrument
+    end
+    if headData.tunerBoxPos then
+        tunerBoxPos = vec(headData.tunerBoxPos[1],headData.tunerBoxPos[2],headData.tunerBoxPos[3])
+    end
+
     local indicatorBlock = world.getBlockState(blockPos - vec(0,2,0))
     local hasSign = string.find(indicatorBlock.id,"sign")
-    if not hasSign then
-        pianoInstance.model = 1
-        pianoInstance.instance.channels[1].instrument = 0
-    end
     pianoInstance.shouldRenderTunerBox = false
-    pianoInstance.lastInstrument = getMidiInstrument(pianoInstance.ID)
-    if indicatorBlock.id == "minecraft:gold_block" then
-        pianoInstance.model = 2
-    elseif indicatorBlock.id == "minecraft:iron_block" then
-        pianoInstance.model = 3
-    elseif indicatorBlock.id == "minecraft:lapis_block" then
-        pianoInstance.model = 4
-        pianoInstance.instance.channels[1].instrument = 128
-    elseif hasSign then
+    if pianoInstance.instrumentOverride then
+        pianoInstance.instance.channels[1].instrument = pianoInstance.instrumentOverride
+    else
+        if not hasSign then
+            pianoInstance.model = 1
+            pianoInstance.instance.channels[1].instrument = 0
+        end
+    end
+    local hasHeadData = pianoModel or defaultInstrument or tunerBoxPos
+    if not hasHeadData then
+        if indicatorBlock.id == "minecraft:gold_block" then
+            pianoInstance.model = 2
+        elseif indicatorBlock.id == "minecraft:iron_block" then
+            pianoInstance.model = 3
+        elseif indicatorBlock.id == "minecraft:lapis_block" then
+            pianoInstance.model = 4
+            if not pianoInstance.instrumentOverride then
+                pianoInstance.instance.channels[1].instrument = 128
+            end
+        end
+    end
+    if hasSign and (not hasHeadData) then
         local signText = indicatorBlock:getEntityData().front_text.messages
-        local pianoModel, defaultInstrument, tunerBoxString
+        local tunerBoxString
         if client.compareVersions(client.getVersion(),"1.20.5") >= 0 then
             pianoModel = tonumber(string.sub(signText[1],2,-2))
             defaultInstrument = tonumber(string.sub(signText[2],2,-2))
@@ -559,87 +692,101 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
             defaultInstrument = tonumber(string.sub(signText[2],10,-3))
             tunerBoxString = string.sub(signText[3],10,-3)
         end
-        local vals = {}
-        for numString in tunerBoxString:gmatch("[^,]+") do
-            table.insert(vals, tonumber(numString))
+        local val1,val2,val3 = tunerBoxString:match("([-%d]+),%s*([-%d]+),%s*([-%d]+)")
+        val1 = tonumber(val1)
+        val2 = tonumber(val2)
+        val3 = tonumber(val3)
+        if val1 and val2 and val3 then
+            tunerBoxPos = vec(val1,val2,val3)
         end
-        local tunerBoxPos
-        if vals[1] and vals[2] and vals[3] then
-            tunerBoxPos = vec(vals[1],vals[2],vals[3])
-        end
-        if pianoModel then
-            pianoInstance.model = pianoModel
-        end
-        if defaultInstrument then
-            setMidiInstrument(pianoInstance.ID,defaultInstrument)
-        end
-        if tunerBoxPos then
-            pianoInstance.shouldRenderTunerBox = true
-            tunerBoxRot:setRot(0,blockProperties.rotation * 22.5,0)
-            tunerBoxParent:setPos((tunerBoxPos - blockPos + vec(0,1.3,0)) * 16)
-            local noteBlock = world.getBlockState(tunerBoxPos)
-            local note
-            if noteBlock.id == "minecraft:note_block" then
-                note = tonumber(noteBlock:getProperties().note)
-            end
-            local itemFrame
-            local entities = world.getEntities(tunerBoxPos - vec(1,1,1),tunerBoxPos + vec(2,2,2))
-            for _,foundEntity in pairs(entities) do
-                local name = foundEntity:getName()
-                if name == "Item Frame" or name == "Glow Item Frame" then
-                    itemFrame = foundEntity
-                end
-            end
-            if itemFrame then
-                local itemFrameRot = itemFrame:getNbt().ItemRotation
-                if itemFrameRot and note then
-                    local intrumentID = math.clamp(itemFrameRot * 24 + math.clamp(note,0,23),0,128)
-                    local groupIndex = math.floor(intrumentID/24)
-                    local instrumentGroup = itemFrameGroups[itemFrameRot]
-                    local lastInstrument = "§7" .. getInstrumentName(pianoInstance,intrumentID - 1)
-                    if math.floor((intrumentID - 1)/24) ~= groupIndex or itemFrameRot > 5 then
-                        lastInstrument = ""
-                    end
-                    local currentInstrument = getInstrumentName(pianoInstance,intrumentID)
-                    local nextInstrument = "§7" .. getInstrumentName(pianoInstance,intrumentID + 1)
-                    if math.floor((intrumentID + 1)/24) ~= groupIndex or itemFrameRot > 5  then
-                        nextInstrument = ""
-                    end
-                    local hoverState = "NONE"
-                    local client = client:getViewer()
-                    if client:getTargetedBlock(true,5):getPos() == tunerBoxPos then
-                        hoverState = "BLOCK"
-                    end
-                    local targetEntity = client:getTargetedEntity(5)
-                    if targetEntity then
-                        if targetEntity:getUUID() == itemFrame:getUUID() then
-                            hoverState = "ENTITY"
-                        end
-                    end
-                    if hoverState == "BLOCK" then
-                        currentInstrument = "§f§n" .. currentInstrument
-                    elseif hoverState == "ENTITY" then
-                        instrumentGroup = "§f§n" .. instrumentGroup
-                    end
-                    pianoInstance.tunerBoxText = "§b" .. instrumentGroup .. "\n"  .. lastInstrument .. "\n§e" .. currentInstrument .. "\n" .. nextInstrument
-                    setMidiInstrument(pianoInstance.ID,intrumentID)
-                    if pianoInstance.lastInstrument ~= intrumentID then
-                        playMidiNote(pianoInstance.ID,60,1,false)
-                    end
-                    pianoInstance.lastInstrument = intrumentID
-                end
-                if not itemFrameRot then
-                    pianoInstance.tunerBoxText = "§cplace item in item frame"
-                end 
-            end
-            if not itemFrame then
-                pianoInstance.tunerBoxText = "§cplace item frame"
-            end
-            if not note then
-                pianoInstance.tunerBoxText = "§cplace note block"
-            end
+        if pianoInstance.instrumentOverride then
+            defaultInstrument = pianoInstance.instrumentOverride
         end
     end
+    if pianoModel then
+        pianoInstance.model = pianoModel
+    end
+    if tunerBoxPos then
+        pianoInstance.shouldRenderTunerBox = true
+        pianoInstance.tunerBoxRot = vec(0,blockProperties.rotation * 22.5,0)
+        pianoInstance.tunerBoxPos = (tunerBoxPos - blockPos + vec(0,1.3,0)) * 16
+        local noteBlock = world.getBlockState(tunerBoxPos)
+        local note
+        if noteBlock.id == "minecraft:note_block" then
+            note = tonumber(noteBlock:getProperties().note)
+        end
+        local itemFrame
+        local entities = world.getEntities(tunerBoxPos - vec(1,1,1),tunerBoxPos + vec(2,2,2))
+        for _,foundEntity in pairs(entities) do
+            local name = foundEntity:getName()
+            if name == "Item Frame" or name == "Glow Item Frame" then
+                itemFrame = foundEntity
+            end
+        end
+        if itemFrame then
+            local itemFrameRot = itemFrame:getNbt().ItemRotation
+            if itemFrameRot and note then
+                local intrumentID
+                if pianoInstance.instrumentOverride then
+                    intrumentID = pianoInstance.instrumentOverride
+                else
+                    intrumentID = math.clamp(itemFrameRot * 24 + math.clamp(note,0,23),0,128)
+                end
+                local groupIndex = math.floor(intrumentID/24)
+                local instrumentGroup = itemFrameGroups[itemFrameRot]
+                local lastInstrument = "§7" .. getInstrumentName(pianoInstance,intrumentID - 1)
+                if math.floor((intrumentID - 1)/24) ~= groupIndex or itemFrameRot > 5 or pianoInstance.instrumentOverride then
+                    lastInstrument = ""
+                end
+                local currentInstrument = getInstrumentName(pianoInstance,intrumentID)
+                local nextInstrument = "§7" .. getInstrumentName(pianoInstance,intrumentID + 1)
+                if math.floor((intrumentID + 1)/24) ~= groupIndex or itemFrameRot > 5 or pianoInstance.instrumentOverride then
+                    nextInstrument = ""
+                end
+                local hoverState = "NONE"
+                local client = client:getViewer()
+                if client:getTargetedBlock(true,5):getPos() == tunerBoxPos then
+                    hoverState = "BLOCK"
+                end
+                local targetEntity = client:getTargetedEntity(5)
+                if targetEntity then
+                    if targetEntity:getUUID() == itemFrame:getUUID() then
+                        hoverState = "ENTITY"
+                    end
+                end
+                if hoverState == "BLOCK" then
+                    currentInstrument = "§f§n" .. currentInstrument
+                elseif hoverState == "ENTITY" then
+                    instrumentGroup = "§f§n" .. instrumentGroup
+                end
+                pianoInstance.tunerBoxText = "§b" .. instrumentGroup .. "\n"  .. lastInstrument .. "\n§e" .. currentInstrument .. "\n" .. nextInstrument
+                defaultInstrument = intrumentID
+            end
+            if not itemFrameRot then
+                pianoInstance.tunerBoxText = "§cplace item in item frame"
+            end 
+        end
+        if not itemFrame then
+            pianoInstance.tunerBoxText = "§cplace item frame"
+        end
+        if not note then
+            pianoInstance.tunerBoxText = "§cplace note block"
+        end
+    end
+    if (not defaultInstrument) and pianoModel == 4 then
+        defaultInstrument = 128
+    end
+    if pianoInstance.instrumentOverride then
+        defaultInstrument = pianoInstance.instrumentOverride
+    end
+    if defaultInstrument then
+        setInstrument(pianoInstance.ID,defaultInstrument)
+        if pianoInstance.lastInstrument ~= defaultInstrument then
+            playMidiNote(pianoInstance.ID,60,1,"PRESS")
+        end
+        pianoInstance.lastInstrument = pianoInstance.instance.channels[1].instrument
+    end
+
     local sysTime = client:getSystemTime()
     for _,playerEntity in pairs(world:getPlayers()) do
         local avatarVars = world:avatarVars()[playerEntity:getUUID()]
@@ -733,8 +880,9 @@ end
 avatar:store("playNote",playNote)
 avatar:store("playMidiNote",playMidiNote)
 avatar:store("releaseMidiNote",releaseMidiNote)
-avatar:store("setMidiInstrument",setMidiInstrument)
-avatar:store("getMidiInstrument",getMidiInstrument)
+avatar:store("setInstrumentOverride",setInstrumentOverride)
+avatar:store("getInstrumentOverride",getInstrumentOverride)
 avatar:store("getPiano", function(pianoID) return pianos[pianoID] end)
 avatar:store("validPos", function(pianoID) return pianos[pianoID] ~= nil end)
 avatar:store("getPlayingKeys", function(pianoID) return pianos[pianoID] ~= nil and pianos[pianoID].playingKeys or nil end)
+avatar:store("getItem",getItem)

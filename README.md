@@ -101,6 +101,7 @@ The second line of the sign should contain the default instrument the piano will
 | 62. | SynthBrass 1                      | 126. | Applause                  |
 | 63. | SynthBrass 2                      | 127. | Gunshot                   |
 |     |                                   | 128. | Percussion                |
+
 This can be left empty, and instrument 0 will be used
 ### Tuner Box Position
 The third line of the sign should contain the position of the piano's tuner box. This is stored as 3 numbers separated by commas. For example: `-128,64,200`. This is the coordinates of the tuner box block in the world. If left empty, the piano will have no tuner box.
@@ -210,7 +211,7 @@ The `playNote()` function just plays a note on the piano when run. It contains t
 - `keyID` is a string containing the ID of the note that should play. E.g. `"C2"`,`"F#3"`,`"A0"` This is just standard notation formatting of note as a letter, followed by octave as a number
 - `doesPlaySound` is a boolean which determines if a sound will play when the note is pressed. This exists to make the implementation for holding notes simple. Just keep this as `true`
 - `notePos` is a vec3 containing the world coordinates the note should play at. If left empty, it will just play at. You can simply ignore this and it will play at the player head coordinates. This is rarely useful, but if you want you can use the piano as a piano sample library (assuming you have it loaded), and play piano sounds anywhere in the world
-  - `noteVolume` is a number containing the volume of the played note, where 1 is the default. You can ignore this and it will be the default value.
+- `noteVolume` is a number containing the volume of the played note, where 1 is the default. You can ignore this and it will be the default value.
 You can instead use `playMidiNote()`
 ```lua
 pianoLib.playNote(tostring(pianoPosVec),"F#3",true,vec(-128,64,200),1)

@@ -170,6 +170,13 @@ Gets the piano object of the given piano
 ```lua
 local piano = pianoLib.getPiano(tostring(pianoPosVec))
 ```
+## getPianos()
+`<pianoLib>.getPianos() → Returns Pianos`
+
+Gets a table containing all pianos
+```lua
+local pianos = pianoLib.getPianos()
+```
 ## getItem()
 `<pianoLib>.getItem(Table data) → Returns ItemStack`
 

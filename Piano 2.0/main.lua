@@ -1,4 +1,8 @@
-local midiPlayerCloudID = "b0e11a12-eada-4f28-bb70-eb8903219fe5"
+local midiPlayerCloudID = "c0cfded1-a213-47d5-8054-94437f4fb906"
+local abortNewPianos = false
+
+nameplate.ALL:setText("Piano 2.0")
+
 local avatarID = {}
 avatarID[1],avatarID[2],avatarID[3],avatarID[4] = client.uuidToIntArray(midiPlayerCloudID)
 local midiPlayerHeadItem = world.newItem([=[minecraft:player_head{display:{Name:'{"text":"midiHead"}'},SkullOwner:{Id:[I;]=]..avatarID[1]..","..avatarID[2]..","..avatarID[3]..","..avatarID[4]..[=[]}}]=])
@@ -16,10 +20,10 @@ tunerBoxText:setText("test")
     :setBackground(true)
     :setPos(0,3,0)
 local permisisonWarning = models.Piano.SKULL:newText("permisisonWarning")
-    :setText("§cSet 'Midi Player Cloud' in 'Disconnected Avatars' to MAX")
+    :setText("§cIn Figura's permissions settings, click \"Show disconnected avatars.\"\n Set both 'Midi Player Cloud' & 'Piano 2.0' to MAX permissions")
     :setAlignment("CENTER")
     :setScale(0.125)
-    :setPos(0,20,-2)
+    :setPos(0,21,-2)
     :setBackground(true)
     :setBackgroundColor(vec(0,0,0,1))
     :setVisible(false)
@@ -61,7 +65,11 @@ piano.__index = piano
 function piano:new(pos)
     self = setmetatable({},piano)
     self.ID = tostring(pos)
-    self.instance = midiAPI.newInstance(tostring(pos),pos)
+    self.instance = midiAPI.newInstance(tostring(pos),pos,avatar)
+    if not self.instance then
+        abortNewPianos = true
+        return
+    end
     self.midi = self.instance.midi
     self.playingKeys = {}
     self.drumAnimations = {}
@@ -400,11 +408,19 @@ local function getTextureValue(data)
     if data.SkullOwner then
         local properties = data.SkullOwner.Properties
         local textures = properties and properties.textures
-        return textures[1].Value
+        if textures and textures[1] then
+            return textures[1].Value
+        else
+            return
+        end
     elseif data.profile or data["minecraft:profile"] then
         local properties = (data.profile or data["minecraft:profile"]).properties
         local textures = properties and properties[1]
-        return textures[1].Value
+        if textures and textures[1] then
+            return textures[1].Value
+        else
+            return
+        end
     end
 end
 
@@ -555,7 +571,7 @@ local function resetPiano(data)
     local rawData = getData(data)
     local headData
     if rawData then
-        headData = parseJson(getData(data))
+        headData = parseJson(rawData)
     end
     if headData then
         pianoModel = headData.model
@@ -580,11 +596,11 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
     midiAPI = world.avatarVars()[midiPlayerCloudID]
     if (not midiAPI) or (not midiAPI.newInstance) then return end
     local blockPos = blockState:getPos()
-    if not pianos[tostring(blockPos)] then
+    if (not pianos[tostring(blockPos)]) and (not abortNewPianos) then
         pianos[tostring(blockPos)] = piano:new(blockPos)
     end
     local pianoInstance = pianos[tostring(blockPos)]
-    if pianoInstance.instance:getPermissionLevel() ~= "MAX" then
+    if not pianoInstance then
         permisisonWarning:setVisible(true)
         return
     end
@@ -643,16 +659,19 @@ function events.skull_render(delta,blockState,itemstack,entity,type)
         return
     end
     local pianoModel,defaultInstrument,tunerBoxPos
-    local headData = parseJson(getData(blockState))
+    local headDataRaw = getData(blockState)
+    local headData
+    if headDataRaw then
+        headData = parseJson(headDataRaw)
+    end
 
-
-    if headData.model then
+    if headData and headData.model then
         pianoModel = headData.model
     end
-    if headData.defaultInstrument then
+    if headData and headData.defaultInstrument then
         defaultInstrument = headData.defaultInstrument
     end
-    if headData.tunerBoxPos then
+    if headData and headData.tunerBoxPos then
         tunerBoxPos = vec(headData.tunerBoxPos[1],headData.tunerBoxPos[2],headData.tunerBoxPos[3])
     end
 
@@ -883,6 +902,7 @@ avatar:store("releaseMidiNote",releaseMidiNote)
 avatar:store("setInstrumentOverride",setInstrumentOverride)
 avatar:store("getInstrumentOverride",getInstrumentOverride)
 avatar:store("getPiano", function(pianoID) return pianos[pianoID] end)
+avatar:store("getPianos", function(pianoID) return pianos end)
 avatar:store("validPos", function(pianoID) return pianos[pianoID] ~= nil end)
 avatar:store("getPlayingKeys", function(pianoID) return pianos[pianoID] ~= nil and pianos[pianoID].playingKeys or nil end)
 avatar:store("getItem",getItem)
